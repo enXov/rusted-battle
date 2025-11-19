@@ -24,31 +24,66 @@ My choice of Rust is deliberate and intentional. Rust's primary selling point—
 
 ### Prerequisites
 
+**Required:**
 - Rust (latest stable) - [Install Rust](https://rustup.rs/)
 - GPU with Vulkan, DirectX 12, or Metal support
+- Updated GPU drivers
 
-### Building
+**Linux:**
+```bash
+# Debian/Ubuntu
+sudo apt install build-essential pkg-config libx11-dev libxi-dev libgl1-mesa-dev
+
+# Arch Linux
+sudo pacman -S base-devel libx11 libxi mesa
+```
+
+**Windows:**
+- Visual Studio Build Tools
+
+### Quick Start
 
 ```bash
 # Clone the repository
 git clone https://github.com/enxov/rusted-battle.git
 cd rusted-battle
 
-# Build and run
+# Run in debug mode (faster compilation)
+cargo run
+
+# Run optimized release build
 cargo run --release
 ```
 
 ### Development
 
 ```bash
-# Run in development mode
-cargo run
+# Format code
+cargo fmt
+
+# Check for issues
+cargo clippy -- -W clippy::all
 
 # Run tests
 cargo test
 
-# Check code
-cargo clippy
+# Build release binary
+cargo build --release
+# Binary: target/release/rusted-battle (or .exe on Windows)
+```
+
+### Cross-Compilation
+
+**Build Windows executable from Linux:**
+
+```bash
+# Install cross-compilation tools
+cargo install cross
+rustup target add x86_64-pc-windows-gnu
+
+# Build Windows .exe
+cross build --target x86_64-pc-windows-gnu --release
+# Output: target/x86_64-pc-windows-gnu/release/rusted-battle.exe
 ```
 
 ## Contributing
