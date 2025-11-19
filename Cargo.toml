@@ -1,0 +1,50 @@
+[package]
+name = "rusted-battle"
+version = "0.1.0"
+edition = "2021"
+authors = ["enxov"]
+description = "A 2D multiplayer arena brawler built from scratch in Rust"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/enxov/rusted-battle"
+readme = "README.md"
+keywords = ["game", "2d", "multiplayer", "arena", "brawler"]
+categories = ["games"]
+
+[dependencies]
+# Graphics & Windowing
+winit = "0.29"
+wgpu = "0.20"
+pollster = "0.3"
+
+# Physics
+rapier2d = "0.19"
+parry2d = "0.14"
+
+# Math
+glam = { version = "0.25", features = ["bytemuck"] }
+
+# Memory & Performance
+zerocopy = "0.7"
+bytemuck = { version = "1.14", features = ["derive"] }
+
+# Utilities
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+approx = "0.5"
+
+[profile.dev]
+opt-level = 1  # Faster compilation with basic optimizations
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 3  # Optimize dependencies even in dev mode
+

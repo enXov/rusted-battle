@@ -1,0 +1,11 @@
+[build]
+# Cross-compilation configuration for Rusted Battle
+
+[target.x86_64-pc-windows-gnu]
+# Windows target configuration
+image = "ghcr.io/cross-rs/cross:x86_64-pc-windows-gnu"
+
+[target.x86_64-unknown-linux-gnu]
+# Linux target configuration  
+image = "ghcr.io/cross-rs/cross:x86_64-unknown-linux-gnu"
+
