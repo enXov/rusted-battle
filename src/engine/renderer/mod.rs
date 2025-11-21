@@ -5,16 +5,26 @@ mod sprite;
 mod texture;
 mod vertex;
 
-pub use camera::{Camera, CameraUniform, Viewport};
-pub use sprite::{Sprite, SpriteRenderer};
-pub use texture::{Texture, TextureHandle, TextureManager};
+pub use camera::{Camera, CameraUniform};
+pub use sprite::SpriteRenderer;
+pub use texture::{TextureHandle, TextureManager};
 pub use vertex::Vertex;
+
+// Re-export for future use
+#[allow(unused_imports)]
+pub use camera::Viewport;
+#[allow(unused_imports)]
+pub use sprite::Sprite;
+#[allow(unused_imports)]
+pub use texture::Texture;
 
 use anyhow::Result;
 use glam::Vec2;
 use log::info;
 use std::sync::Arc;
 use winit::window::Window;
+
+use crate::engine::physics::DebugRenderer as PhysicsDebugRenderer;
 
 /// Main renderer responsible for initializing wgpu and coordinating rendering
 pub struct Renderer {
@@ -26,6 +36,7 @@ pub struct Renderer {
     sprite_renderer: SpriteRenderer,
     texture_manager: TextureManager,
     camera: Camera,
+    physics_debug_renderer: PhysicsDebugRenderer,
 }
 
 impl Renderer {
@@ -97,6 +108,10 @@ impl Renderer {
         // Create camera
         let camera = Camera::new(Vec2::ZERO, size.width as f32, size.height as f32);
 
+        // Create physics debug renderer
+        let view_proj = camera.view_proj_matrix().to_cols_array_2d();
+        let physics_debug_renderer = PhysicsDebugRenderer::new(&device, surface_format, view_proj);
+
         info!(
             "Renderer initialized with {}x{} resolution",
             size.width, size.height
@@ -111,6 +126,7 @@ impl Renderer {
             sprite_renderer,
             texture_manager,
             camera,
+            physics_debug_renderer,
         })
     }
 
@@ -148,6 +164,12 @@ impl Renderer {
             bytemuck::cast_slice(&[camera_uniform]),
         );
 
+        // Update physics debug renderer view projection
+        self.physics_debug_renderer.update_view_proj(
+            &self.queue,
+            self.camera.view_proj_matrix().to_cols_array_2d(),
+        );
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Main Render Pass"),
@@ -172,6 +194,9 @@ impl Renderer {
             // Render sprites
             self.sprite_renderer
                 .render(&mut render_pass, &self.camera, &self.texture_manager)?;
+
+            // Render physics debug (if enabled)
+            self.physics_debug_renderer.render(&mut render_pass);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -213,5 +238,15 @@ impl Renderer {
     /// Get a mutable reference to the camera
     pub fn camera_mut(&mut self) -> &mut Camera {
         &mut self.camera
+    }
+
+    /// Get a mutable reference to the physics debug renderer
+    pub fn physics_debug_renderer_mut(&mut self) -> &mut PhysicsDebugRenderer {
+        &mut self.physics_debug_renderer
+    }
+
+    /// Get the surface format
+    pub fn surface_format(&self) -> wgpu::TextureFormat {
+        self.config.format
     }
 }
