@@ -1,7 +1,6 @@
 use anyhow::Result;
 use log::info;
 use std::sync::Arc;
-use std::time::Instant;
 use winit::{
     event::{Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
@@ -13,6 +12,7 @@ mod core;
 mod engine;
 mod game;
 
+use engine::game_loop::GameLoop;
 use engine::physics::{body::presets, PhysicsWorld, Vector};
 use engine::renderer::Renderer;
 
@@ -20,7 +20,7 @@ use engine::renderer::Renderer;
 struct GameWorld {
     renderer: Renderer,
     physics: PhysicsWorld,
-    last_update: Instant,
+    game_loop: GameLoop,
 
     // Demo objects
     #[allow(dead_code)]
@@ -51,24 +51,53 @@ impl GameWorld {
         renderer.physics_debug_renderer_mut().set_enabled(true);
 
         info!("Physics demo initialized");
-        info!("Press D to toggle debug rendering");
-        info!("Press R to reset the falling box");
+        info!("Controls:");
+        info!("  D - Toggle debug rendering");
+        info!("  R - Reset the falling box");
+        info!("  P - Pause/Resume game");
 
         Ok(Self {
             renderer,
             physics,
-            last_update: Instant::now(),
+            game_loop: GameLoop::new(),
             demo_platform_handle: platform_handle,
             demo_box_handle: box_handle,
         })
     }
 
-    fn update(&mut self) {
-        let now = Instant::now();
-        let _dt = now.duration_since(self.last_update).as_secs_f32();
-        self.last_update = now;
+    /// Run a single frame: update and render
+    fn tick(&mut self) -> Result<()> {
+        // Begin frame and get number of updates to run
+        let num_updates = self.game_loop.begin_frame();
 
-        // Step physics simulation
+        // Run fixed timestep updates
+        for _ in 0..num_updates {
+            self.update();
+        }
+
+        // Render the current frame
+        self.render()?;
+
+        // Log FPS periodically (every 60 frames)
+        if self.game_loop.frame_count() % 60 == 0 {
+            info!(
+                "FPS: {:.1} | Frame: {} | Updates: {} | Paused: {}",
+                self.game_loop.fps(),
+                self.game_loop.frame_count(),
+                self.game_loop.update_count(),
+                self.game_loop.is_paused()
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Update game state with fixed timestep
+    /// This should be called multiple times per frame if needed
+    fn update(&mut self) {
+        let _dt = self.game_loop.fixed_timestep();
+
+        // Step physics simulation with fixed timestep
         self.physics.step();
 
         // Check for collision events
@@ -203,18 +232,18 @@ fn main() -> Result<()> {
                     KeyCode::KeyR => {
                         game_world.reset_box();
                     }
+                    KeyCode::KeyP => {
+                        game_world.game_loop.toggle_pause();
+                    }
                     _ => {}
                 },
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
-                    // Update game state
-                    game_world.update();
-
-                    // Render frame
-                    if let Err(e) = game_world.render() {
-                        log::error!("Render error: {:?}", e);
+                    // Run game loop tick (update + render)
+                    if let Err(e) = game_world.tick() {
+                        log::error!("Frame error: {:?}", e);
                     }
                 }
                 Event::AboutToWait => {
