@@ -13,6 +13,7 @@ mod engine;
 mod game;
 
 use engine::game_loop::GameLoop;
+use engine::input::{Action, InputManager};
 use engine::physics::{body::presets, PhysicsWorld, Vector};
 use engine::renderer::Renderer;
 
@@ -21,6 +22,7 @@ struct GameWorld {
     renderer: Renderer,
     physics: PhysicsWorld,
     game_loop: GameLoop,
+    input: InputManager,
 
     // Demo objects
     #[allow(dead_code)]
@@ -50,16 +52,23 @@ impl GameWorld {
         // Enable physics debug rendering
         renderer.physics_debug_renderer_mut().set_enabled(true);
 
+        // Initialize input manager (4 players)
+        let input = InputManager::new(4);
+
         info!("Physics demo initialized");
         info!("Controls:");
-        info!("  D - Toggle debug rendering");
+        info!("  P1: WASD to move, 1/2/3 for abilities");
+        info!("  P2: IJKL or Arrows to move, U/O/P or Numpad7/8/9 for abilities");
+        info!("  F - Toggle debug rendering");
         info!("  R - Reset the falling box");
         info!("  P - Pause/Resume game");
+        info!("  ESC - Menu");
 
         Ok(Self {
             renderer,
             physics,
             game_loop: GameLoop::new(),
+            input,
             demo_platform_handle: platform_handle,
             demo_box_handle: box_handle,
         })
@@ -77,6 +86,9 @@ impl GameWorld {
 
         // Render the current frame
         self.render()?;
+
+        // Update input at the end of the frame
+        self.input.update();
 
         // Log FPS periodically (every 60 frames)
         if self.game_loop.frame_count() % 60 == 0 {
@@ -97,6 +109,11 @@ impl GameWorld {
     fn update(&mut self) {
         let _dt = self.game_loop.fixed_timestep();
 
+        // Process input-driven actions (only when not paused)
+        if !self.game_loop.is_paused() {
+            self.process_input();
+        }
+
         // Step physics simulation with fixed timestep
         self.physics.step();
 
@@ -115,6 +132,59 @@ impl GameWorld {
                 } => {
                     info!("Collision stopped: {:?} <-> {:?}", collider1, collider2);
                 }
+            }
+        }
+    }
+
+    /// Process input and handle game actions
+    fn process_input(&mut self) {
+        // Handle menu input (global)
+        if self.input.any_player_just_pressed(Action::Menu) {
+            info!("Menu requested");
+            // TODO: Open menu system when implemented
+        }
+
+        // Demo: Move the box with P1 input
+        if let Some(player1) = self.input.player(0) {
+            let (horizontal, _vertical) = player1.get_direction();
+
+            // Set velocity instead of applying impulse (fixes sliding)
+            if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
+                let mut velocity = *body.linvel();
+                velocity.x = horizontal * 10.0; // Set horizontal velocity directly
+                body.set_linvel(velocity, true);
+            }
+
+            // Jump with W (only if just pressed)
+            if player1.just_pressed(Action::Jump) {
+                info!("P1 jumped!");
+                if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
+                    body.apply_impulse(Vector::new(0.0, 30.0), true);
+                }
+            }
+
+            // Ability demos
+            if player1.just_pressed(Action::Ability1) {
+                info!("P1 used Ability 1!");
+            }
+            if player1.just_pressed(Action::Ability2) {
+                info!("P1 used Ability 2!");
+            }
+            if player1.just_pressed(Action::Ability3) {
+                info!("P1 used Ability 3!");
+            }
+        }
+
+        // Demo: Show P2 input
+        if let Some(player2) = self.input.player(1) {
+            if player2.just_pressed(Action::Ability1) {
+                info!("P2 used Ability 1!");
+            }
+            if player2.just_pressed(Action::Ability2) {
+                info!("P2 used Ability 2!");
+            }
+            if player2.just_pressed(Action::Ability3) {
+                info!("P2 used Ability 3!");
             }
         }
     }
@@ -156,6 +226,27 @@ impl GameWorld {
             "Physics debug rendering: {}",
             if !enabled { "ON" } else { "OFF" }
         );
+    }
+
+    fn handle_keyboard_input(&mut self, event: &KeyEvent) {
+        // Handle pause separately (needs to work even when paused)
+        if let PhysicalKey::Code(KeyCode::KeyP) = event.physical_key {
+            if event.state == winit::event::ElementState::Pressed && !event.repeat {
+                self.game_loop.toggle_pause();
+                info!(
+                    "Game {}",
+                    if self.game_loop.is_paused() {
+                        "paused"
+                    } else {
+                        "resumed"
+                    }
+                );
+                return;
+            }
+        }
+
+        // Process all other input through the input manager
+        self.input.process_keyboard_event(event);
     }
 
     fn reset_box(&mut self) {
@@ -216,27 +307,32 @@ fn main() -> Result<()> {
                 Event::WindowEvent {
                     event:
                         WindowEvent::KeyboardInput {
-                            event:
-                                KeyEvent {
-                                    physical_key: PhysicalKey::Code(key_code),
-                                    state: winit::event::ElementState::Pressed,
-                                    ..
-                                },
+                            event: ref key_event,
                             ..
                         },
                     ..
-                } => match key_code {
-                    KeyCode::KeyD => {
-                        game_world.toggle_debug_rendering();
+                } => {
+                    // Let input manager handle all keyboard input
+                    game_world.handle_keyboard_input(key_event);
+
+                    // Keep legacy debug keys for now (F and R)
+                    if let KeyEvent {
+                        physical_key: PhysicalKey::Code(key_code),
+                        state: winit::event::ElementState::Pressed,
+                        ..
+                    } = key_event
+                    {
+                        match key_code {
+                            KeyCode::KeyF => {
+                                game_world.toggle_debug_rendering();
+                            }
+                            KeyCode::KeyR => {
+                                game_world.reset_box();
+                            }
+                            _ => {}
+                        }
                     }
-                    KeyCode::KeyR => {
-                        game_world.reset_box();
-                    }
-                    KeyCode::KeyP => {
-                        game_world.game_loop.toggle_pause();
-                    }
-                    _ => {}
-                },
+                }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
                     ..
