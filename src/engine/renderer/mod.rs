@@ -2,7 +2,7 @@
 
 mod camera;
 mod sprite;
-mod texture;
+pub mod texture;
 mod vertex;
 
 pub use camera::{Camera, CameraUniform};

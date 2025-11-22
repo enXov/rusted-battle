@@ -12,6 +12,7 @@ mod core;
 mod engine;
 mod game;
 
+use engine::assets::AssetManager;
 use engine::game_loop::GameLoop;
 use engine::input::{Action, InputManager};
 use engine::physics::{body::presets, PhysicsWorld, Vector};
@@ -23,6 +24,7 @@ struct GameWorld {
     physics: PhysicsWorld,
     game_loop: GameLoop,
     input: InputManager,
+    assets: AssetManager,
 
     // Demo objects
     #[allow(dead_code)]
@@ -55,6 +57,38 @@ impl GameWorld {
         // Initialize input manager (4 players)
         let input = InputManager::new(4);
 
+        // Initialize asset manager
+        let asset_path = std::env::current_dir()?.join("assets");
+        info!("Asset path: {}", asset_path.display());
+
+        let mut assets = AssetManager::new(asset_path);
+
+        // Example: Create some test textures for prototyping
+        assets.create_color_texture(
+            renderer.device(),
+            renderer.queue(),
+            "red",
+            [255, 0, 0, 255],
+        )?;
+        assets.create_color_texture(
+            renderer.device(),
+            renderer.queue(),
+            "green",
+            [0, 255, 0, 255],
+        )?;
+        assets.create_color_texture(
+            renderer.device(),
+            renderer.queue(),
+            "blue",
+            [0, 0, 255, 255],
+        )?;
+
+        let stats = assets.stats();
+        info!(
+            "Asset manager initialized with {} textures",
+            stats.texture_count
+        );
+
         info!("Physics demo initialized");
         info!("Controls:");
         info!("  P1: WASD to move, 1/2/3 for abilities");
@@ -69,6 +103,7 @@ impl GameWorld {
             physics,
             game_loop: GameLoop::new(),
             input,
+            assets,
             demo_platform_handle: platform_handle,
             demo_box_handle: box_handle,
         })
@@ -108,6 +143,17 @@ impl GameWorld {
     /// This should be called multiple times per frame if needed
     fn update(&mut self) {
         let _dt = self.game_loop.fixed_timestep();
+
+        // Check for hot-reloaded assets (dev mode only)
+        #[cfg(debug_assertions)]
+        {
+            let reloaded = self
+                .assets
+                .check_hot_reload(self.renderer.device(), self.renderer.queue());
+            if !reloaded.is_empty() {
+                info!("Hot-reloaded assets: {:?}", reloaded);
+            }
+        }
 
         // Process input-driven actions (only when not paused)
         if !self.game_loop.is_paused() {
