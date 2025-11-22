@@ -51,26 +51,19 @@ pub fn default_p1_bindings() -> Vec<(InputSource, Action)> {
     ]
 }
 
-/// Default keyboard bindings for Player 2
+/// Default keyboard bindings for Player 2 (for local testing only)
+/// In actual multiplayer, P2-P4 will be on different machines
 pub fn default_p2_bindings() -> Vec<(InputSource, Action)> {
     vec![
-        // Movement (Arrow keys + IJKL as alternative)
+        // Movement (Arrow keys only - simple and clean)
         (InputSource::key(KeyCode::ArrowLeft), Action::MoveLeft),
-        (InputSource::key(KeyCode::KeyJ), Action::MoveLeft),
         (InputSource::key(KeyCode::ArrowRight), Action::MoveRight),
-        (InputSource::key(KeyCode::KeyL), Action::MoveRight),
         (InputSource::key(KeyCode::ArrowUp), Action::Jump),
-        (InputSource::key(KeyCode::KeyI), Action::Jump),
         (InputSource::key(KeyCode::ArrowDown), Action::Duck),
-        (InputSource::key(KeyCode::KeyK), Action::Duck),
-        // Abilities (Numpad for those who have it)
-        (InputSource::key(KeyCode::Numpad7), Action::Ability1),
-        (InputSource::key(KeyCode::Numpad8), Action::Ability2),
-        (InputSource::key(KeyCode::Numpad9), Action::Ability3),
-        // Alternative abilities for keyboards without numpad
-        (InputSource::key(KeyCode::KeyU), Action::Ability1),
-        (InputSource::key(KeyCode::KeyO), Action::Ability2),
-        (InputSource::key(KeyCode::KeyP), Action::Ability3),
+        // Abilities (simple number keys)
+        (InputSource::key(KeyCode::Digit7), Action::Ability1),
+        (InputSource::key(KeyCode::Digit8), Action::Ability2),
+        (InputSource::key(KeyCode::Digit9), Action::Ability3),
     ]
 }
 

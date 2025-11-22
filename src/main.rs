@@ -30,6 +30,11 @@ struct GameWorld {
     #[allow(dead_code)]
     demo_platform_handle: engine::physics::RigidBodyHandle,
     demo_box_handle: engine::physics::RigidBodyHandle,
+
+    // Sprite animation tracking (rendering will be implemented in Phase 2)
+    sprite_loaded: bool,
+    animation_frame: usize,
+    animation_timer: f32,
 }
 
 impl GameWorld {
@@ -83,6 +88,25 @@ impl GameWorld {
             [0, 0, 255, 255],
         )?;
 
+        // Try to load player sprite sheet (for Phase 2 when sprite rendering is complete)
+        // Note: Asset manager automatically prepends "textures/" so we don't include it
+        let sprite_loaded = match assets.load_texture(
+            renderer.device(),
+            renderer.queue(),
+            "characters/blue_idle.png",
+        ) {
+            Ok(_handle) => {
+                info!("✓ Loaded player sprite sheet: blue_idle.png (4 frames @ 64x64)");
+                info!("   Sprite rendering will be implemented in Phase 2");
+                true
+            }
+            Err(e) => {
+                info!("⚠ Could not load sprite sheet: {}", e);
+                info!("   Save blue_idle.png to assets/textures/characters/");
+                false
+            }
+        };
+
         let stats = assets.stats();
         info!(
             "Asset manager initialized with {} textures",
@@ -92,11 +116,11 @@ impl GameWorld {
         info!("Physics demo initialized");
         info!("Controls:");
         info!("  P1: WASD to move, 1/2/3 for abilities");
-        info!("  P2: IJKL or Arrows to move, U/O/P or Numpad7/8/9 for abilities");
+        info!("  P2 (local test): Arrow keys to move, 7/8/9 for abilities");
         info!("  F - Toggle debug rendering");
-        info!("  R - Reset the falling box");
+        info!("  R - Reset the box");
         info!("  P - Pause/Resume game");
-        info!("  ESC - Menu");
+        info!("  ESC - Menu (not implemented yet)");
 
         Ok(Self {
             renderer,
@@ -106,6 +130,9 @@ impl GameWorld {
             assets,
             demo_platform_handle: platform_handle,
             demo_box_handle: box_handle,
+            sprite_loaded,
+            animation_frame: 0,
+            animation_timer: 0.0,
         })
     }
 
@@ -142,7 +169,7 @@ impl GameWorld {
     /// Update game state with fixed timestep
     /// This should be called multiple times per frame if needed
     fn update(&mut self) {
-        let _dt = self.game_loop.fixed_timestep();
+        let dt = self.game_loop.fixed_timestep();
 
         // Check for hot-reloaded assets (dev mode only)
         #[cfg(debug_assertions)]
@@ -158,6 +185,24 @@ impl GameWorld {
         // Process input-driven actions (only when not paused)
         if !self.game_loop.is_paused() {
             self.process_input();
+
+            // Update sprite animation (4 frames @ 8 FPS = 0.125s per frame)
+            if self.sprite_loaded {
+                self.animation_timer += dt;
+                if self.animation_timer >= 0.125 {
+                    self.animation_timer = 0.0;
+                    let old_frame = self.animation_frame;
+                    self.animation_frame = (self.animation_frame + 1) % 4; // 4 frames
+
+                    // Log frame changes occasionally (every 4 frames = 1 complete cycle)
+                    if self.animation_frame == 0 {
+                        info!(
+                            "Animation cycle complete: Frame {} -> {}",
+                            old_frame, self.animation_frame
+                        );
+                    }
+                }
+            }
         }
 
         // Step physics simulation with fixed timestep
@@ -182,6 +227,33 @@ impl GameWorld {
         }
     }
 
+    /// Check if a body is on the ground using raycast
+    fn is_grounded(&self, body_handle: engine::physics::RigidBodyHandle) -> bool {
+        use rapier2d::prelude::QueryFilter;
+
+        if let Some(body) = self.physics.get_rigid_body(body_handle) {
+            let position = body.translation();
+
+            // Cast a ray downward from the player's position
+            // Ray starts slightly inside the player and extends down
+            let ray_origin = Vector::new(position.x, position.y - 0.9); // Start near bottom of 2-unit tall player
+            let ray_direction = Vector::new(0.0, -1.0); // Straight down
+            let max_distance = 0.3; // Short distance to check for ground
+
+            // Raycast to check for ground
+            if let Some(_hit) = self.physics.raycast(
+                ray_origin,
+                ray_direction,
+                max_distance,
+                true,
+                QueryFilter::default().exclude_rigid_body(body_handle), // Don't hit ourselves
+            ) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Process input and handle game actions
     fn process_input(&mut self) {
         // Handle menu input (global)
@@ -201,8 +273,8 @@ impl GameWorld {
                 body.set_linvel(velocity, true);
             }
 
-            // Jump with W (only if just pressed)
-            if player1.just_pressed(Action::Jump) {
+            // Jump with W (only if just pressed AND on ground)
+            if player1.just_pressed(Action::Jump) && self.is_grounded(self.demo_box_handle) {
                 info!("P1 jumped!");
                 if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
                     body.apply_impulse(Vector::new(0.0, 30.0), true);
@@ -255,6 +327,8 @@ impl GameWorld {
         }
 
         // Render the frame
+        // Note: Sprite rendering will be fully implemented in Phase 2 - Character System
+        // For now, physics debug visualization shows the player box
         self.renderer.render()?;
 
         Ok(())
