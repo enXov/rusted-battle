@@ -115,7 +115,8 @@ impl GameWorld {
 
         info!("Physics demo initialized");
         info!("Controls:");
-        info!("  P1: WASD to move, 1/2/3 for abilities");
+        info!("  P1: WASD to move");
+        info!("  Left/Right/Middle mouse buttons for abilities");
         info!("  F - Toggle debug rendering");
         info!("  R - Reset the box");
         info!("  P - Pause/Resume game");
@@ -355,6 +356,15 @@ impl GameWorld {
         self.input.process_keyboard_event(event);
     }
 
+    fn handle_mouse_input(
+        &mut self,
+        button: winit::event::MouseButton,
+        state: winit::event::ElementState,
+    ) {
+        // Process mouse input through the input manager
+        self.input.process_mouse_button_event(button, state);
+    }
+
     fn reset_box(&mut self) {
         info!("Resetting falling box");
         if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
@@ -438,6 +448,13 @@ fn main() -> Result<()> {
                             _ => {}
                         }
                     }
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::MouseInput { state, button, .. },
+                    ..
+                } => {
+                    // Let input manager handle mouse input
+                    game_world.handle_mouse_input(button, state);
                 }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,

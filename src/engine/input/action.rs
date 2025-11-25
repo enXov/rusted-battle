@@ -1,5 +1,6 @@
 // Game action definitions and mappings
 
+use winit::event::MouseButton;
 use winit::keyboard::KeyCode;
 
 /// Represents all possible in-game actions
@@ -21,10 +22,11 @@ pub enum Action {
     Menu,
 }
 
-/// Represents an input source (keyboard key or controller button)
+/// Represents an input source (keyboard key, mouse button, or controller button)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputSource {
     Keyboard(KeyCode),
+    Mouse(MouseButton),
     // Future: Add controller support
     // GamepadButton(gilrs::Button),
 }
@@ -34,9 +36,14 @@ impl InputSource {
     pub fn key(code: KeyCode) -> Self {
         Self::Keyboard(code)
     }
+
+    /// Create a mouse button input source
+    pub fn mouse(button: MouseButton) -> Self {
+        Self::Mouse(button)
+    }
 }
 
-/// Default keyboard bindings for Player 1
+/// Default keyboard/mouse bindings for Player 1
 pub fn default_p1_bindings() -> Vec<(InputSource, Action)> {
     vec![
         // Movement (WASD - standard gaming layout)
@@ -44,10 +51,10 @@ pub fn default_p1_bindings() -> Vec<(InputSource, Action)> {
         (InputSource::key(KeyCode::KeyD), Action::MoveRight),
         (InputSource::key(KeyCode::KeyW), Action::Jump),
         (InputSource::key(KeyCode::KeyS), Action::Duck),
-        // Abilities (will be mouse buttons in actual game, using keys for now)
-        (InputSource::key(KeyCode::Digit1), Action::Ability1),
-        (InputSource::key(KeyCode::Digit2), Action::Ability2),
-        (InputSource::key(KeyCode::Digit3), Action::Ability3),
+        // Abilities (mouse buttons)
+        (InputSource::mouse(MouseButton::Left), Action::Ability1),
+        (InputSource::mouse(MouseButton::Right), Action::Ability2),
+        (InputSource::mouse(MouseButton::Middle), Action::Ability3),
     ]
 }
 
@@ -70,9 +77,15 @@ mod tests {
     }
 
     #[test]
-    fn test_input_source_creation() {
+    fn test_input_source_keyboard_creation() {
         let source = InputSource::key(KeyCode::KeyA);
         assert_eq!(source, InputSource::Keyboard(KeyCode::KeyA));
+    }
+
+    #[test]
+    fn test_input_source_mouse_creation() {
+        let source = InputSource::mouse(MouseButton::Left);
+        assert_eq!(source, InputSource::Mouse(MouseButton::Left));
     }
 
     #[test]
@@ -83,21 +96,50 @@ mod tests {
     }
 
     #[test]
+    fn test_default_p1_bindings_use_mouse_for_abilities() {
+        let bindings = default_p1_bindings();
+
+        // Find ability bindings
+        let ability1_binding = bindings
+            .iter()
+            .find(|(_, action)| *action == Action::Ability1);
+        let ability2_binding = bindings
+            .iter()
+            .find(|(_, action)| *action == Action::Ability2);
+        let ability3_binding = bindings
+            .iter()
+            .find(|(_, action)| *action == Action::Ability3);
+
+        // Verify they use mouse buttons
+        assert!(matches!(
+            ability1_binding,
+            Some((InputSource::Mouse(MouseButton::Left), _))
+        ));
+        assert!(matches!(
+            ability2_binding,
+            Some((InputSource::Mouse(MouseButton::Right), _))
+        ));
+        assert!(matches!(
+            ability3_binding,
+            Some((InputSource::Mouse(MouseButton::Middle), _))
+        ));
+    }
+
+    #[test]
     fn test_global_bindings_exist() {
         let bindings = global_bindings();
         assert!(!bindings.is_empty());
     }
 
     #[test]
-    fn test_no_duplicate_keys_in_p1() {
+    fn test_no_duplicate_inputs_in_p1() {
         let bindings = default_p1_bindings();
-        let mut seen_keys = std::collections::HashSet::new();
+        let mut seen_sources = std::collections::HashSet::new();
         for (source, _) in bindings {
             assert!(
-                seen_keys.insert(source),
-                "Duplicate key found in P1 bindings"
+                seen_sources.insert(source),
+                "Duplicate input source found in P1 bindings"
             );
         }
     }
-
 }

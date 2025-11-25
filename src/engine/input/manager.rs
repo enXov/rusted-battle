@@ -3,7 +3,7 @@
 use super::action::{Action, InputSource};
 use super::config::InputConfigManager;
 use super::player::PlayerInput;
-use winit::event::{ElementState, KeyEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::PhysicalKey;
 
 /// Main input manager that coordinates all input for all players
@@ -56,6 +56,28 @@ impl InputManager {
                                 player.release(action);
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Process a mouse button event from winit
+    pub fn process_mouse_button_event(&mut self, button: MouseButton, state: ElementState) {
+        let source = InputSource::mouse(button);
+
+        // Mouse input is typically for Player 1 only (local player)
+        // In multiplayer, each player has their own mouse on their own machine
+        let player_id = 0;
+
+        if let Some(action) = self.config.get_action(player_id, source) {
+            if let Some(player) = self.players.get_mut(player_id) {
+                match state {
+                    ElementState::Pressed => {
+                        player.press(action);
+                    }
+                    ElementState::Released => {
+                        player.release(action);
                     }
                 }
             }
@@ -286,5 +308,35 @@ mod tests {
         assert!(player.is_pressed(Action::Jump));
         assert!(player.is_pressed(Action::Ability1));
         assert!(player.is_pressed(Action::MoveRight));
+    }
+
+    #[test]
+    fn test_mouse_button_input() {
+        let mut manager = InputManager::new(4);
+
+        // Press left mouse button (Ability1 for P1)
+        manager.process_mouse_button_event(MouseButton::Left, ElementState::Pressed);
+        assert!(manager.player(0).unwrap().is_pressed(Action::Ability1));
+        assert!(manager.player(0).unwrap().just_pressed(Action::Ability1));
+
+        // Release left mouse button
+        manager.process_mouse_button_event(MouseButton::Left, ElementState::Released);
+        assert!(!manager.player(0).unwrap().is_pressed(Action::Ability1));
+        assert!(manager.player(0).unwrap().just_released(Action::Ability1));
+    }
+
+    #[test]
+    fn test_all_mouse_abilities() {
+        let mut manager = InputManager::new(4);
+
+        // Press all three mouse buttons
+        manager.process_mouse_button_event(MouseButton::Left, ElementState::Pressed);
+        manager.process_mouse_button_event(MouseButton::Right, ElementState::Pressed);
+        manager.process_mouse_button_event(MouseButton::Middle, ElementState::Pressed);
+
+        let player = manager.player(0).unwrap();
+        assert!(player.is_pressed(Action::Ability1)); // Left mouse
+        assert!(player.is_pressed(Action::Ability2)); // Right mouse
+        assert!(player.is_pressed(Action::Ability3)); // Middle mouse
     }
 }
