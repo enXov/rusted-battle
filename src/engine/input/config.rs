@@ -117,8 +117,7 @@ impl InputConfig {
         self.clear();
         let defaults = match self.player_id {
             0 => super::action::default_p1_bindings(),
-            1 => super::action::default_p2_bindings(),
-            _ => Vec::new(), // Players 3+ need custom bindings
+            _ => Vec::new(), // Players 2+ (remote) have no local bindings by default
         };
         for (source, action) in defaults {
             self.bind(source, action);

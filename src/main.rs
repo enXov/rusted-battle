@@ -116,7 +116,6 @@ impl GameWorld {
         info!("Physics demo initialized");
         info!("Controls:");
         info!("  P1: WASD to move, 1/2/3 for abilities");
-        info!("  P2 (local test): Arrow keys to move, 7/8/9 for abilities");
         info!("  F - Toggle debug rendering");
         info!("  R - Reset the box");
         info!("  P - Pause/Resume game");
@@ -290,19 +289,6 @@ impl GameWorld {
             }
             if player1.just_pressed(Action::Ability3) {
                 info!("P1 used Ability 3!");
-            }
-        }
-
-        // Demo: Show P2 input
-        if let Some(player2) = self.input.player(1) {
-            if player2.just_pressed(Action::Ability1) {
-                info!("P2 used Ability 1!");
-            }
-            if player2.just_pressed(Action::Ability2) {
-                info!("P2 used Ability 2!");
-            }
-            if player2.just_pressed(Action::Ability3) {
-                info!("P2 used Ability 3!");
             }
         }
     }

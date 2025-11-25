@@ -51,22 +51,6 @@ pub fn default_p1_bindings() -> Vec<(InputSource, Action)> {
     ]
 }
 
-/// Default keyboard bindings for Player 2 (for local testing only)
-/// In actual multiplayer, P2-P4 will be on different machines
-pub fn default_p2_bindings() -> Vec<(InputSource, Action)> {
-    vec![
-        // Movement (Arrow keys only - simple and clean)
-        (InputSource::key(KeyCode::ArrowLeft), Action::MoveLeft),
-        (InputSource::key(KeyCode::ArrowRight), Action::MoveRight),
-        (InputSource::key(KeyCode::ArrowUp), Action::Jump),
-        (InputSource::key(KeyCode::ArrowDown), Action::Duck),
-        // Abilities (simple number keys)
-        (InputSource::key(KeyCode::Digit7), Action::Ability1),
-        (InputSource::key(KeyCode::Digit8), Action::Ability2),
-        (InputSource::key(KeyCode::Digit9), Action::Ability3),
-    ]
-}
-
 /// Global bindings (not player-specific)
 pub fn global_bindings() -> Vec<(InputSource, Action)> {
     vec![
@@ -99,13 +83,6 @@ mod tests {
     }
 
     #[test]
-    fn test_default_p2_bindings_exist() {
-        let bindings = default_p2_bindings();
-        assert!(!bindings.is_empty());
-        assert!(bindings.len() >= 7);
-    }
-
-    #[test]
     fn test_global_bindings_exist() {
         let bindings = global_bindings();
         assert!(!bindings.is_empty());
@@ -123,15 +100,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_no_duplicate_keys_in_p2() {
-        let bindings = default_p2_bindings();
-        let mut seen_keys = std::collections::HashSet::new();
-        for (source, _) in bindings {
-            assert!(
-                seen_keys.insert(source),
-                "Duplicate key found in P2 bindings"
-            );
-        }
-    }
 }
