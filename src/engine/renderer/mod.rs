@@ -6,15 +6,13 @@ pub mod texture;
 mod vertex;
 
 pub use camera::{Camera, CameraUniform};
-pub use sprite::SpriteRenderer;
+pub use sprite::{Sprite, SpriteRenderer, SpriteUV};
 pub use texture::{TextureHandle, TextureManager};
 pub use vertex::Vertex;
 
 // Re-export for future use
 #[allow(unused_imports)]
 pub use camera::Viewport;
-#[allow(unused_imports)]
-pub use sprite::Sprite;
 #[allow(unused_imports)]
 pub use texture::Texture;
 
@@ -102,11 +100,15 @@ impl Renderer {
         // Create sprite renderer
         let sprite_renderer = SpriteRenderer::new(&device, &config)?;
 
-        // Create texture manager
-        let texture_manager = TextureManager::new(&device, &queue);
+        // Create texture manager with default texture
+        let mut texture_manager = TextureManager::new(&device, &queue);
+        texture_manager.create_default_texture(&device, &queue)?;
 
-        // Create camera
-        let camera = Camera::new(Vec2::ZERO, size.width as f32, size.height as f32);
+        // Create camera with proper zoom for 2D gameplay
+        // Zoom of ~50 means each world unit is about 50 pixels
+        // This makes a 2-unit tall character appear as ~100 pixels on screen
+        let mut camera = Camera::new(Vec2::ZERO, size.width as f32, size.height as f32);
+        camera.set_zoom(50.0);
 
         // Create physics debug renderer
         let view_proj = camera.view_proj_matrix().to_cols_array_2d();
@@ -170,6 +172,9 @@ impl Renderer {
             self.camera.view_proj_matrix().to_cols_array_2d(),
         );
 
+        // Prepare sprites (upload vertex data)
+        self.sprite_renderer.prepare(&self.queue);
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Main Render Pass"),
@@ -191,9 +196,12 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            // Render sprites
+            // Render sprites (they were prepared before render pass)
             self.sprite_renderer
                 .render(&mut render_pass, &self.camera, &self.texture_manager)?;
+
+            // Clear sprites after rendering
+            // Note: Can't do this inside render_pass, must do after
 
             // Render physics debug (if enabled)
             self.physics_debug_renderer.render(&mut render_pass);
@@ -201,6 +209,9 @@ impl Renderer {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        // Clear sprites after frame
+        self.sprite_renderer.clear();
 
         Ok(())
     }
@@ -248,5 +259,16 @@ impl Renderer {
     /// Get the surface format
     pub fn surface_format(&self) -> wgpu::TextureFormat {
         self.config.format
+    }
+
+    /// Add a sprite to render this frame
+    pub fn add_sprite(&mut self, sprite: Sprite) {
+        self.sprite_renderer.add_sprite(sprite);
+    }
+
+    /// Load a texture from file path
+    pub fn load_texture(&mut self, path: &std::path::Path) -> Result<TextureHandle> {
+        self.texture_manager
+            .load_texture(&self.device, &self.queue, path)
     }
 }

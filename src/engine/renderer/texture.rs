@@ -7,7 +7,7 @@ use std::path::Path;
 
 /// Handle to a loaded texture
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TextureHandle(usize);
+pub struct TextureHandle(pub usize);
 
 /// A loaded texture with GPU resources
 pub struct Texture {
@@ -78,7 +78,7 @@ impl Texture {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest, // Pixel-perfect for 2D
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
@@ -154,19 +154,66 @@ impl Texture {
     }
 }
 
-/// Manages texture loading and caching
+/// Manages texture loading, caching, and bind groups
 pub struct TextureManager {
     textures: Vec<Texture>,
+    bind_groups: Vec<wgpu::BindGroup>,
     path_to_handle: HashMap<String, TextureHandle>,
+    bind_group_layout: wgpu::BindGroupLayout,
+    default_texture_handle: Option<TextureHandle>,
 }
 
 impl TextureManager {
     /// Create a new texture manager
-    pub fn new(_device: &wgpu::Device, _queue: &wgpu::Queue) -> Self {
+    pub fn new(device: &wgpu::Device, _queue: &wgpu::Queue) -> Self {
+        // Create bind group layout for textures
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Texture Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
         Self {
             textures: Vec::new(),
+            bind_groups: Vec::new(),
             path_to_handle: HashMap::new(),
+            bind_group_layout,
+            default_texture_handle: None,
         }
+    }
+
+    /// Create a bind group for a texture
+    fn create_bind_group(&self, device: &wgpu::Device, texture: &Texture) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Texture Bind Group"),
+            layout: &self.bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&texture.sampler),
+                },
+            ],
+        })
     }
 
     /// Load a texture from a file path
@@ -187,9 +234,13 @@ impl TextureManager {
         let bytes = std::fs::read(&path)?;
         let texture = Texture::from_bytes(device, queue, &bytes, &path_str)?;
 
-        // Store texture
+        // Create bind group
+        let bind_group = self.create_bind_group(device, &texture);
+
+        // Store texture and bind group
         let handle = TextureHandle(self.textures.len());
         self.textures.push(texture);
+        self.bind_groups.push(bind_group);
         self.path_to_handle.insert(path_str, handle);
 
         Ok(handle)
@@ -204,8 +255,11 @@ impl TextureManager {
         label: &str,
     ) -> Result<TextureHandle> {
         let texture = Texture::from_bytes(device, queue, bytes, label)?;
+        let bind_group = self.create_bind_group(device, &texture);
+
         let handle = TextureHandle(self.textures.len());
         self.textures.push(texture);
+        self.bind_groups.push(bind_group);
         Ok(handle)
     }
 
@@ -218,14 +272,45 @@ impl TextureManager {
         label: &str,
     ) -> Result<TextureHandle> {
         let texture = Texture::from_color(device, queue, color, Some(label))?;
+        let bind_group = self.create_bind_group(device, &texture);
+
         let handle = TextureHandle(self.textures.len());
         self.textures.push(texture);
+        self.bind_groups.push(bind_group);
+        Ok(handle)
+    }
+
+    /// Create a default white texture for sprites without textures
+    pub fn create_default_texture(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<TextureHandle> {
+        let handle =
+            self.create_color_texture(device, queue, [255, 255, 255, 255], "default_white")?;
+        self.default_texture_handle = Some(handle);
         Ok(handle)
     }
 
     /// Get a texture by handle
     pub fn get(&self, handle: TextureHandle) -> Option<&Texture> {
         self.textures.get(handle.0)
+    }
+
+    /// Get a bind group by texture handle
+    pub fn get_bind_group(&self, handle: TextureHandle) -> Option<&wgpu::BindGroup> {
+        self.bind_groups.get(handle.0)
+    }
+
+    /// Get the default texture bind group
+    pub fn get_default_bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.default_texture_handle
+            .and_then(|h| self.bind_groups.get(h.0))
+    }
+
+    /// Get the bind group layout
+    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.bind_group_layout
     }
 
     /// Get the number of loaded textures

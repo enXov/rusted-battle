@@ -15,8 +15,10 @@ mod game;
 use engine::assets::AssetManager;
 use engine::game_loop::GameLoop;
 use engine::input::{Action, InputManager};
-use engine::physics::{body::presets, PhysicsWorld, Vector};
-use engine::renderer::Renderer;
+use engine::physics::{body::presets, PhysicsWorld};
+use engine::renderer::{Renderer, Sprite, SpriteUV, TextureHandle};
+use game::characters::{CharacterManager, CharacterStats};
+use glam::Vec2;
 
 /// Game world that holds all game state
 struct GameWorld {
@@ -26,15 +28,15 @@ struct GameWorld {
     input: InputManager,
     assets: AssetManager,
 
-    // Demo objects
+    // Character system
+    characters: CharacterManager,
+
+    // Demo platform (static)
     #[allow(dead_code)]
     demo_platform_handle: engine::physics::RigidBodyHandle,
-    demo_box_handle: engine::physics::RigidBodyHandle,
 
-    // Sprite animation tracking (rendering will be implemented in Phase 2)
-    sprite_loaded: bool,
-    animation_frame: usize,
-    animation_timer: f32,
+    // Character sprite texture (for rendering)
+    character_texture: Option<TextureHandle>,
 }
 
 impl GameWorld {
@@ -42,7 +44,7 @@ impl GameWorld {
         let mut renderer = Renderer::new(window.clone()).await?;
         let mut physics = PhysicsWorld::new();
 
-        info!("Creating demo physics objects...");
+        info!("Creating arena platform...");
 
         // Create a platform (static)
         let platform_body = presets::platform_body(0.0, -5.0);
@@ -50,11 +52,17 @@ impl GameWorld {
         let platform_collider = presets::platform_collider(20.0, 1.0);
         physics.add_collider(platform_collider, platform_handle);
 
-        // Create a falling box (dynamic)
-        let box_body = presets::player_body(0.0, 10.0);
-        let box_handle = physics.add_rigid_body(box_body);
-        let box_collider = presets::player_collider(1.0, 2.0);
-        physics.add_collider(box_collider, box_handle);
+        // Initialize character manager and spawn player 1
+        let mut characters = CharacterManager::new();
+        let player1_id = characters.spawn_character(
+            "Player 1",
+            Some(0), // Player index 0
+            CharacterStats::standard(),
+            &mut physics,
+            0.0,  // spawn x
+            10.0, // spawn y (above platform)
+        );
+        info!("Spawned Player 1 character with ID {}", player1_id);
 
         // Enable physics debug rendering
         renderer.physics_debug_renderer_mut().set_enabled(true);
@@ -68,7 +76,7 @@ impl GameWorld {
 
         let mut assets = AssetManager::new(asset_path);
 
-        // Example: Create some test textures for prototyping
+        // Create test textures for prototyping
         assets.create_color_texture(
             renderer.device(),
             renderer.queue(),
@@ -88,22 +96,29 @@ impl GameWorld {
             [0, 0, 255, 255],
         )?;
 
-        // Try to load player sprite sheet (for Phase 2 when sprite rendering is complete)
-        // Note: Asset manager automatically prepends "textures/" so we don't include it
-        let sprite_loaded = match assets.load_texture(
-            renderer.device(),
-            renderer.queue(),
-            "characters/blue_idle.png",
-        ) {
-            Ok(_handle) => {
-                info!("✓ Loaded player sprite sheet: blue_idle.png (4 frames @ 64x64)");
-                info!("   Sprite rendering will be implemented in Phase 2");
-                true
+        // Try to load player sprite sheet into the renderer's texture manager
+        let asset_path = std::env::current_dir()?.join("assets/textures/characters/blue_idle.png");
+        let character_texture = match renderer.load_texture(&asset_path) {
+            Ok(handle) => {
+                info!("✓ Loaded player sprite sheet: blue_idle.png");
+                Some(handle)
             }
             Err(e) => {
                 info!("⚠ Could not load sprite sheet: {}", e);
-                info!("   Save blue_idle.png to assets/textures/characters/");
-                false
+                info!("   Creating placeholder colored sprite instead");
+                // Create a blue placeholder texture
+                // Need to borrow device and queue separately to avoid borrow checker issues
+                let device = renderer.device() as *const wgpu::Device;
+                let queue = renderer.queue() as *const wgpu::Queue;
+                let handle = unsafe {
+                    renderer.texture_manager_mut().create_color_texture(
+                        &*device,
+                        &*queue,
+                        [50, 100, 255, 255], // Blue color
+                        "player_placeholder",
+                    )?
+                };
+                Some(handle)
             }
         };
 
@@ -113,12 +128,12 @@ impl GameWorld {
             stats.texture_count
         );
 
-        info!("Physics demo initialized");
+        info!("Game initialized with character system");
         info!("Controls:");
-        info!("  P1: WASD to move");
-        info!("  Left/Right/Middle mouse buttons for abilities");
+        info!("  Player 1: WASD to move, W to jump");
+        info!("  Left/Right/Middle mouse buttons for abilities (coming soon)");
         info!("  F - Toggle debug rendering");
-        info!("  R - Reset the box");
+        info!("  R - Respawn character");
         info!("  P - Pause/Resume game");
         info!("  ESC - Menu (not implemented yet)");
 
@@ -128,11 +143,9 @@ impl GameWorld {
             game_loop: GameLoop::new(),
             input,
             assets,
+            characters,
             demo_platform_handle: platform_handle,
-            demo_box_handle: box_handle,
-            sprite_loaded,
-            animation_frame: 0,
-            animation_timer: 0.0,
+            character_texture,
         })
     }
 
@@ -152,14 +165,25 @@ impl GameWorld {
         // Update input at the end of the frame
         self.input.update();
 
-        // Log FPS periodically (every 60 frames)
+        // Log FPS and character state periodically (every 60 frames)
         if self.game_loop.frame_count() % 60 == 0 {
+            let character_info = if let Some(character) = self.characters.get_by_player(0) {
+                format!(
+                    " | P1 State: {:?} | HP: {}",
+                    character.state(),
+                    character.health
+                )
+            } else {
+                String::new()
+            };
+
             info!(
-                "FPS: {:.1} | Frame: {} | Updates: {} | Paused: {}",
+                "FPS: {:.1} | Frame: {} | Updates: {} | Paused: {}{}",
                 self.game_loop.fps(),
                 self.game_loop.frame_count(),
                 self.game_loop.update_count(),
-                self.game_loop.is_paused()
+                self.game_loop.is_paused(),
+                character_info
             );
         }
 
@@ -167,7 +191,6 @@ impl GameWorld {
     }
 
     /// Update game state with fixed timestep
-    /// This should be called multiple times per frame if needed
     fn update(&mut self) {
         let dt = self.game_loop.fixed_timestep();
 
@@ -186,23 +209,8 @@ impl GameWorld {
         if !self.game_loop.is_paused() {
             self.process_input();
 
-            // Update sprite animation (4 frames @ 8 FPS = 0.125s per frame)
-            if self.sprite_loaded {
-                self.animation_timer += dt;
-                if self.animation_timer >= 0.125 {
-                    self.animation_timer = 0.0;
-                    let old_frame = self.animation_frame;
-                    self.animation_frame = (self.animation_frame + 1) % 4; // 4 frames
-
-                    // Log frame changes occasionally (every 4 frames = 1 complete cycle)
-                    if self.animation_frame == 0 {
-                        info!(
-                            "Animation cycle complete: Frame {} -> {}",
-                            old_frame, self.animation_frame
-                        );
-                    }
-                }
-            }
+            // Update all characters (movement, physics, animation)
+            self.characters.update(&mut self.physics, dt);
         }
 
         // Step physics simulation with fixed timestep
@@ -227,33 +235,6 @@ impl GameWorld {
         }
     }
 
-    /// Check if a body is on the ground using raycast
-    fn is_grounded(&self, body_handle: engine::physics::RigidBodyHandle) -> bool {
-        use rapier2d::prelude::QueryFilter;
-
-        if let Some(body) = self.physics.get_rigid_body(body_handle) {
-            let position = body.translation();
-
-            // Cast a ray downward from the player's position
-            // Ray starts slightly inside the player and extends down
-            let ray_origin = Vector::new(position.x, position.y - 0.9); // Start near bottom of 2-unit tall player
-            let ray_direction = Vector::new(0.0, -1.0); // Straight down
-            let max_distance = 0.3; // Short distance to check for ground
-
-            // Raycast to check for ground
-            if let Some(_hit) = self.physics.raycast(
-                ray_origin,
-                ray_direction,
-                max_distance,
-                true,
-                QueryFilter::default().exclude_rigid_body(body_handle), // Don't hit ourselves
-            ) {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Process input and handle game actions
     fn process_input(&mut self) {
         // Handle menu input (global)
@@ -262,39 +243,93 @@ impl GameWorld {
             // TODO: Open menu system when implemented
         }
 
-        // Demo: Move the box with P1 input
-        if let Some(player1) = self.input.player(0) {
-            let (horizontal, _vertical) = player1.get_direction();
+        // Process Player 1 input
+        if let Some(player_input) = self.input.player(0) {
+            // Get movement direction
+            let (horizontal, _vertical) = player_input.get_direction();
 
-            // Set velocity instead of applying impulse (fixes sliding)
-            if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
-                let mut velocity = *body.linvel();
-                velocity.x = horizontal * 10.0; // Set horizontal velocity directly
-                body.set_linvel(velocity, true);
-            }
+            // Get character and apply input
+            if let Some(character) = self.characters.get_by_player_mut(0) {
+                // Set movement input
+                character.input_horizontal = horizontal;
 
-            // Jump with W (only if just pressed AND on ground)
-            if player1.just_pressed(Action::Jump) && self.is_grounded(self.demo_box_handle) {
-                info!("P1 jumped!");
-                if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
-                    body.apply_impulse(Vector::new(0.0, 30.0), true);
+                // Set duck input
+                character.input_duck = player_input.is_held(Action::Duck);
+
+                // Jump (just pressed)
+                if player_input.just_pressed(Action::Jump) {
+                    character.input_jump = true;
                 }
-            }
 
-            // Ability demos
-            if player1.just_pressed(Action::Ability1) {
-                info!("P1 used Ability 1!");
-            }
-            if player1.just_pressed(Action::Ability2) {
-                info!("P1 used Ability 2!");
-            }
-            if player1.just_pressed(Action::Ability3) {
-                info!("P1 used Ability 3!");
+                // Ability demos
+                if player_input.just_pressed(Action::Ability1) {
+                    info!("P1 used Ability 1! (State: {:?})", character.state());
+                }
+                if player_input.just_pressed(Action::Ability2) {
+                    info!("P1 used Ability 2!");
+                }
+                if player_input.just_pressed(Action::Ability3) {
+                    info!("P1 used Ability 3!");
+                }
             }
         }
     }
 
     fn render(&mut self) -> Result<()> {
+        // Add character sprites to the renderer
+        for character in self.characters.all() {
+            if let Some((x, y)) = character.position(&self.physics) {
+                // Get animation frame data
+                let frame_data = character.animation.get_frame_data();
+
+                // Calculate UV coordinates for the current animation frame
+                // Sprite sheet: 1024x128 pixels, 8 frames (128x128 each) in horizontal row
+                // Sprites are at the BOTTOM of each frame
+
+                // Clamp frame to valid range (0-7) for 8 frames
+                let frame = frame_data.frame_index.min(7);
+                let frame_width = 1.0 / 8.0; // 8 frames = 0.125 each
+                let u_min = frame as f32 * frame_width;
+                let u_max = u_min + frame_width;
+
+                // Vertical: sprites are at the bottom ~60% of each frame
+                let v_min = 0.40; // Start from 40% down (skip empty top)
+                let v_max = 1.0; // Go to bottom
+
+                // Sprite faces LEFT in sheet, so:
+                // - Character facing RIGHT → flip the sprite
+                // - Character facing LEFT → no flip
+                let uv = if !frame_data.flip_horizontal {
+                    // Character facing right, flip sprite
+                    SpriteUV {
+                        min: glam::Vec2::new(u_max, v_min),
+                        max: glam::Vec2::new(u_min, v_max),
+                    }
+                } else {
+                    // Character facing left, no flip
+                    SpriteUV {
+                        min: glam::Vec2::new(u_min, v_min),
+                        max: glam::Vec2::new(u_max, v_max),
+                    }
+                };
+
+                // Create sprite for this character
+                let mut sprite = Sprite::new(
+                    Vec2::new(x, y),
+                    Vec2::new(character.stats.width * 2.0, character.stats.height), // Size in world units
+                );
+
+                // Set texture if available
+                if let Some(texture) = self.character_texture {
+                    sprite.texture = Some(texture);
+                }
+                sprite.uv = uv;
+                sprite.z_order = 1.0; // Above background
+
+                self.renderer.add_sprite(sprite);
+            }
+        }
+
         // Prepare physics debug rendering
         let debug_data = self.physics.debug_data();
         let device = self.renderer.device() as *const wgpu::Device;
@@ -314,8 +349,6 @@ impl GameWorld {
         }
 
         // Render the frame
-        // Note: Sprite rendering will be fully implemented in Phase 2 - Character System
-        // For now, physics debug visualization shows the player box
         self.renderer.render()?;
 
         Ok(())
@@ -365,12 +398,10 @@ impl GameWorld {
         self.input.process_mouse_button_event(button, state);
     }
 
-    fn reset_box(&mut self) {
-        info!("Resetting falling box");
-        if let Some(body) = self.physics.get_rigid_body_mut(self.demo_box_handle) {
-            body.set_translation(Vector::new(0.0, 10.0), true);
-            body.set_linvel(Vector::new(0.0, 0.0), true);
-            body.set_angvel(0.0, true);
+    fn respawn_character(&mut self) {
+        info!("Respawning Player 1 character");
+        if let Some(character) = self.characters.get_by_player_mut(0) {
+            character.respawn(&mut self.physics, 0.0, 10.0);
         }
     }
 }
@@ -383,14 +414,14 @@ fn main() -> Result<()> {
 
     info!("Starting Rusted Battle...");
     info!("======================");
-    info!("Physics Integration Demo");
+    info!("Character System Demo");
     info!("======================");
 
     // Create event loop and window
     let event_loop = EventLoop::new()?;
     let window = Arc::new(
         WindowBuilder::new()
-            .with_title("Rusted Battle - Physics Demo")
+            .with_title("Rusted Battle - Character System")
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
             .with_resizable(true)
             .build(&event_loop)?,
@@ -443,7 +474,7 @@ fn main() -> Result<()> {
                                 game_world.toggle_debug_rendering();
                             }
                             KeyCode::KeyR => {
-                                game_world.reset_box();
+                                game_world.respawn_character();
                             }
                             _ => {}
                         }
